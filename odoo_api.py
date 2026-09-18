@@ -46,11 +46,11 @@ class OdooAPI:
 
         return datos
 
-    def leer_ordenes(self, limite=2):
+    def leer_ordenes(self, limite=99999999999):
         return self.ejecutar(
             "sale.order.line",
             "search_read",
-            domain=[("name", "not ilike", "KIT")],
+            domain=[("name", "not ilike", "KIT"),("id_state" , "not ilike", "closed")],
             fields=[
                 "id",               
                 "order_id",          # Trae [id_orden, "SO001"]
@@ -64,5 +64,25 @@ class OdooAPI:
                 
             ],
             limit=limite,
-            order="id desc",
+            order="commitment_date asc",
         )
+    
+
+    def operaciones_modelo(self, limite =999):
+        return self.ejecutar(
+            "mrp.routing.workcenter",
+            "search_read",
+            domain=[],
+            fields=[
+                "name",           
+                "bom_id",              # operacion
+                "workcenter_id",       # workcenter
+                "time_mode",        # time mode
+                "time_cycle",       # time cycle   
+                "quality_point_count",       # quality check
+                
+                
+            ],
+            limit=limite,
+            order="workcenter_id asc",
+        ) 

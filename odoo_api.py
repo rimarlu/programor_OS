@@ -46,7 +46,7 @@ class OdooAPI:
 
         return datos
 
-    def leer_ordenes(self, limite=200):
+    def leer_ordenes(self, limite=2):
         return self.ejecutar(
             "sale.order.line",
             "search_read",
@@ -58,7 +58,9 @@ class OdooAPI:
                 "name",              # Descripción del producto / línea
                 "product_uom_qty",   # Cantidad
                 "price_subtotal",    # Subtotal
-                 "id_state",          # Estado de la línea (nuevo campo)
+                "id_state",   
+                "date_order",
+                "commitment_date",       # Estado de la línea (nuevo campo)
                 
             ],
             limit=limite,

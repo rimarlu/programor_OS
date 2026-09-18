@@ -544,6 +544,104 @@ def cargar_odoo():
         return None
 
 
+def obtener_nombre_relacion_odoo(valor):
+
+    if isinstance(valor, (list, tuple)) and len(valor) >= 2:
+        return valor[1]
+
+    if isinstance(valor, dict):
+        return valor.get(
+            "display_name",
+            valor.get("name", "")
+        )
+
+    if valor is False or valor is None:
+        return ""
+
+    return valor
+
+
+def normalizar_respuesta_odoo(registros):
+
+    if not isinstance(registros, list):
+        raise ValueError(
+            "La respuesta de Odoo no contiene una lista de registros."
+        )
+
+    if not registros:
+        return pd.DataFrame(columns=COLUMNAS_ODOO)
+
+    df_api = pd.DataFrame(registros)
+
+    campos_requeridos = [
+        "order_partner_id",
+        "order_id",
+        "id",
+        "name",
+        "product_uom_qty",
+        #"date_order",
+        #"commitment_date",
+        "price_subtotal",
+        "id_state"
+    ]
+
+    faltantes = [
+        campo
+        for campo in campos_requeridos
+        if campo not in df_api.columns
+    ]
+
+    if faltantes:
+        raise ValueError(
+            "Odoo no devolvió los campos requeridos: "
+            + ", ".join(faltantes)
+        )
+
+    df = pd.DataFrame()
+
+    df["Cliente"] = df_api[
+        "order_partner_id"
+    ].apply(obtener_nombre_relacion_odoo)
+
+    df["Referencia del pedido"] = df_api[
+        "order_id"
+    ].apply(obtener_nombre_relacion_odoo)
+
+    df["ID"] = df_api["id"].apply(
+        lambda valor: ""
+        if pd.isna(valor)
+        else str(valor).strip()
+    )
+
+    df["Descripción"] = df_api["name"].fillna("")
+
+    df["Cantidad"] = pd.to_numeric(
+        df_api["product_uom_qty"],
+        errors="coerce"
+    )
+
+    df["Fecha Orden"] = pd.to_datetime(
+        df_api["date_order"],
+        errors="coerce"
+    )
+
+    df["Fecha Entrega Producción"] = pd.to_datetime(
+        df_api["commitment_date"],
+        errors="coerce"
+    )
+
+    df["Subtotal"] = pd.to_numeric(
+        df_api["price_subtotal"],
+        errors="coerce"
+    )
+
+    df["Estado ID"] = df_api[
+        "id_state"
+    ].apply(obtener_nombre_relacion_odoo)
+
+    return df[COLUMNAS_ODOO].copy()
+
+
 def cargar_gestion():
 
     if not ARCHIVO_GESTION.exists():
@@ -1353,15 +1451,8 @@ elif pagina == "📋 Importación Odoo":
     )
 
     st.write(
-        "Suba aquí el archivo Excel generado desde Odoo."
+        "Consulte las líneas de órdenes directamente en Odoo."
     )
-
-
-    archivo = st.file_uploader(
-        "Seleccionar archivo Excel",
-        type=["xlsx", "xls"]
-    )
-
 
     df_guardado = cargar_odoo()
 
@@ -1373,132 +1464,96 @@ elif pagina == "📋 Importación Odoo":
             f"{len(df_guardado)} registros."
         )
 
-
-    if archivo is not None:
+    if st.button(
+        "🔄 Consultar Odoo",
+        type="primary",
+        key="consultar_api_odoo"
+    ):
 
         try:
 
-            libro_excel = pd.ExcelFile(
-                archivo
-            )
+            with st.spinner(
+                "Consultando líneas de órdenes en Odoo..."
+            ):
 
-
-            st.success(
-                f"🟢 Archivo leído correctamente. "
-                f"Hoja utilizada: {libro_excel.sheet_names[0]}"
-            )
-
-            # --------------------------------------------------
-            # UTILIZAR LA PRIMERA HOJA
-            # --------------------------------------------------
-
-            nombre_hoja = (
-                libro_excel.sheet_names[0]
-            )
-
-
-            df = pd.read_excel(
-                archivo,
-                sheet_name=nombre_hoja
-            )
-
-            # --------------------------------------------------
-            # LIMPIAR NOMBRES DE COLUMNAS
-            # --------------------------------------------------
-
-            df.columns = [
-                str(columna).strip()
-                for columna in df.columns
-            ]
-
-
-            st.write(
-                f"Registros encontrados: "
-                f"**{len(df)}**"
-            )
-
-
-            st.dataframe(
-                df,
-                width="stretch",
-                hide_index=True
-            )
-
-
-            # --------------------------------------------------
-            # VALIDAR COLUMNAS PRINCIPALES
-            # --------------------------------------------------
-
-            faltantes = [
-                columna
-                for columna in COLUMNAS_ODOO
-                if columna not in df.columns
-            ]
-
-
-            if faltantes:
-
-                st.warning(
-                    "El archivo no contiene algunas "
-                    "columnas esperadas:"
+                cliente_odoo = OdooAPI()
+                registros = cliente_odoo.leer_ordenes()
+                df_consulta = normalizar_respuesta_odoo(
+                    registros
                 )
 
-                for columna in faltantes:
+            st.session_state[
+                "vista_previa_odoo_api"
+            ] = df_consulta
 
-                    st.write(
-                        f"- {columna}"
-                    )
-
-
-            else:
-
-                if st.button(
-                    "📥 Importar datos a la aplicación",
-                    type="primary"
-                ):
-
-                    guardar = df.copy()
-
-
-                    guardar["ID"] = (
-                        guardar["ID"]
-                        .astype(str)
-                        .str.strip()
-                    )
-
-
-                    # ------------------------------------------
-                    # GUARDAR SOLAMENTE LOS CAMPOS DE ODOO
-                    # ------------------------------------------
-
-                    guardar = guardar[
-                        COLUMNAS_ODOO
-                    ].copy()
-
-
-                    guardar.to_pickle(
-                        ARCHIVO_ODOO
-                    )
-
-
-                    st.success(
-                        "🟢 Datos de Odoo guardados "
-                        "correctamente."
-                    )
-
-
-                    st.rerun()
-
+            st.success(
+                f"🟢 Consulta completada: "
+                f"{len(df_consulta)} registros encontrados."
+            )
 
         except Exception as error:
 
-            st.error(
-                "Error al leer el archivo."
+            st.session_state.pop(
+                "vista_previa_odoo_api",
+                None
             )
 
-            st.exception(
-                error
+            st.error(
+                f"No fue posible consultar Odoo: {error}"
             )
+
+
+    df_previa = st.session_state.get(
+        "vista_previa_odoo_api"
+    )
+
+
+    if df_previa is not None:
+
+        st.subheader(
+            "Vista previa de Odoo"
+        )
+
+        st.write(
+            f"Registros encontrados: **{len(df_previa)}**"
+        )
+
+        st.dataframe(
+            df_previa,
+            width="stretch",
+            hide_index=True
+        )
+
+        if df_previa.empty:
+
+            st.info(
+                "La consulta no devolvió líneas de órdenes."
+            )
+
+        elif st.button(
+            "📥 Guardar datos en la aplicación",
+            type="primary",
+            key="guardar_consulta_api_odoo"
+        ):
+
+            guardar = df_previa[
+                COLUMNAS_ODOO
+            ].copy()
+
+            guardar.to_pickle(
+                ARCHIVO_ODOO
+            )
+
+            st.session_state.pop(
+                "vista_previa_odoo_api",
+                None
+            )
+
+            st.success(
+                "🟢 Datos de Odoo guardados correctamente."
+            )
+
+            st.rerun()
 
 
 # ==========================================================
@@ -5146,11 +5201,7 @@ elif pagina == "📚 Maestro de Actividades":
             # --------------------------------------------------
 
             resultado_id = df_gestion[
-                ids_gestion.str.contains(
-                    f"_{id_consulta}_",
-                    regex=False,
-                    na=False
-                )
+                ids_gestion.eq(id_consulta)
             ]
 
 
@@ -5218,11 +5269,7 @@ elif pagina == "📚 Maestro de Actividades":
 
 
         resultado_id = df_gestion[
-            ids_gestion.str.contains(
-                f"_{id_consultado}_",
-                regex=False,
-                na=False
-            )
+            ids_gestion.eq(id_consultado)
         ]
 
 
@@ -5485,11 +5532,7 @@ elif pagina == "📚 Maestro de Actividades":
 
 
                 resultado_id_actual = df_gestion[
-                    ids_gestion.str.contains(
-                        f"_{id_consultado}_",
-                        regex=False,
-                        na=False
-                    )
+                    ids_gestion.eq(id_consultado)
                 ]
 
 
@@ -5606,11 +5649,7 @@ elif pagina == "📚 Maestro de Actividades":
 
                 resultado_verificacion = (
                     df_verificacion[
-                        ids_verificacion.str.contains(
-                            f"_{id_consultado}_",
-                            regex=False,
-                            na=False
-                        )
+                        ids_verificacion.eq(id_consultado)
                     ]
                 )
 

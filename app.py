@@ -1,6 +1,7 @@
 import streamlit as st
 from pathlib import Path
 import pandas as pd
+from odoo_api import OdooAPI
 
 from programacion import mostrar_programacion
 from actividades import mostrar_actividades_id

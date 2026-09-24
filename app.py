@@ -517,6 +517,7 @@ ESTADOS_REGISTRO = [
     "Nuevo",
     "Vigente",
     "Programado",
+    "Pendiente Cierre",
     "En ejecución",
     "Finalizado",
     "Cancelado",
@@ -1195,9 +1196,12 @@ pagina = st.sidebar.radio(
         "🧠 Competencias",
         "🔧 Actividades",
         "📚 Maestro de Actividades",
-        "📅 Programación",  
+        "📅 Programación",
         "👥 Programación Personal",
-        "📄 Órdenes de Servicio"
+        "📄 Órdenes de Servicio",
+        "📊 Calificación del Personal",
+        "📈 Eficacia de las Órdenes de Servicio",
+        "🎯 Efectividad de las Órdenes de Servicio"
     ]
 )
 
@@ -1810,7 +1814,8 @@ elif pagina == "📁 Gestión ID":
                 "Programado",
                 "En ejecución",
                 "Finalizado",
-                "Cancelado"
+                "Cancelado", 
+                "Pendiente Cierre"
             ],
             default=[]
         )
@@ -1872,11 +1877,93 @@ elif pagina == "📁 Gestión ID":
             default=[]
         )
 
+        # ------------------------------------------------------
+    # FILTROS ID Y REFERENCIA DEL PEDIDO
+    # ------------------------------------------------------
+
+    col_id, col_referencia = st.columns(2)
+
+    ids_disponibles = (
+        df_gestion["ID"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        .tolist()
+    )
+
+    ids_disponibles = [
+        valor for valor in ids_disponibles
+        if valor
+    ]
+
+    ids_disponibles = sorted(
+        ids_disponibles,
+        key=lambda valor: (
+            not valor.isdigit(),
+            int(valor) if valor.isdigit() else valor.casefold()
+        )
+    )
+
+    referencias_disponibles = sorted(
+        valor
+        for valor in (
+            df_gestion["Referencia del pedido"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .unique()
+            .tolist()
+        )
+        if valor
+    )
+
+    with col_id:
+        filtro_id = st.multiselect(
+            "ID",
+            options=ids_disponibles,
+            default=[]
+        )
+
+    with col_referencia:
+        filtro_referencia = st.multiselect(
+            "Referencia del pedido",
+            options=referencias_disponibles,
+            default=[]
+        )    
+
     # ======================================================
     # APLICAR FILTROS
     # ======================================================
 
     df_mostrar = df_gestion.copy()
+
+        # ------------------------------------------------------
+    # FILTRO ID
+    # ------------------------------------------------------
+
+    if filtro_id:
+        df_mostrar = df_mostrar[
+            df_mostrar["ID"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .isin(filtro_id)
+        ]
+
+
+    # ------------------------------------------------------
+    # FILTRO REFERENCIA DEL PEDIDO
+    # ------------------------------------------------------
+
+    if filtro_referencia:
+        df_mostrar = df_mostrar[
+            df_mostrar["Referencia del pedido"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .isin(filtro_referencia)
+        ]
 
 
     # ------------------------------------------------------
@@ -1979,6 +2066,117 @@ elif pagina == "📁 Gestión ID":
             )
         ]
 
+        # ======================================================
+    # ASIGNAR FECHA A TODOS LOS REGISTROS FILTRADOS
+    # ======================================================
+
+    st.subheader("📅 Asignación masiva de fecha_Programado Para")
+
+    col_fecha_masiva, col_accion_masiva = st.columns([2, 1])
+
+    with col_fecha_masiva:
+        fecha_masiva = st.date_input(
+            "Fecha para los registros filtrados",
+            value=pd.Timestamp.now().date(),
+            key="fecha_masiva_gestion"
+        )
+
+    with col_accion_masiva:
+        st.write("")
+        st.write("")
+
+        if st.button(
+            f"Asignar fecha a {len(df_mostrar)} registros",
+            type="secondary",
+            disabled=df_mostrar.empty
+        ):
+            # Conservar los índices originales de df_gestion
+            indices_filtrados = df_mostrar.index
+
+            fecha_programada = pd.Timestamp(
+                fecha_masiva
+            ).normalize()
+
+            hoy = pd.Timestamp.now().normalize()
+
+            df_gestion.loc[
+                indices_filtrados,
+                "Programado Para"
+            ] = fecha_programada
+
+            # Fecha de hoy activa la programación del día
+            if fecha_programada == hoy:
+
+                estado_actual = (
+                    df_gestion.loc[
+                        indices_filtrados,
+                        "Estado Programador"
+                    ]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                )
+
+                df_gestion.loc[
+                    indices_filtrados,
+                    "Programar Hoy"
+                ] = "SI"
+
+                df_gestion.loc[
+                    indices_filtrados,
+                    "Estado Registro"
+                ] = "Programado"
+
+                df_gestion.loc[
+                    indices_filtrados,
+                    "Estado Programador"
+                ] = "Programado"
+
+                # Mantener las excepciones que ya aplica
+                # el guardado individual
+                for estado_especial in [
+                    "En ejecución",
+                    "Finalizado",
+                    "Cancelado"
+                ]:
+                    indices_especiales = indices_filtrados[
+                        estado_actual.eq(estado_especial).to_numpy()
+                    ]
+
+                    df_gestion.loc[
+                        indices_especiales,
+                        "Estado Registro"
+                    ] = estado_especial
+
+                    df_gestion.loc[
+                        indices_especiales,
+                        "Estado Programador"
+                    ] = estado_especial
+
+                indices_cierre = indices_filtrados[
+                    estado_actual.eq("Finalizado").to_numpy()
+                    | estado_actual.eq("Cancelado").to_numpy()
+                ]
+
+                df_gestion.loc[
+                    indices_cierre,
+                    "Programar Hoy"
+                ] = "NO"
+
+            else:
+                df_gestion.loc[
+                    indices_filtrados,
+                    "Programar Hoy"
+                ] = "NO"
+
+            guardar_gestion(df_gestion)
+
+            st.success(
+                f"Fecha asignada a {len(indices_filtrados)} registros."
+            )
+
+            st.rerun()    
+
     # ======================================================
     # RESULTADO DEL FILTRO
     # ======================================================
@@ -2060,7 +2258,8 @@ elif pagina == "📁 Gestión ID":
                         "Programado",
                         "En ejecución",
                         "Finalizado",
-                        "Cancelado"
+                        "Cancelado",
+                        "Pendiente Cierre"
                     ],
                     required=False
                 )
@@ -2283,183 +2482,266 @@ elif pagina == "📁 Gestión ID":
                     st.rerun()
 
 
-    # ======================================================
-    # GUARDAR PROGRAMACIÓN
-    # ======================================================
+# ======================================================
+# GUARDAR PROGRAMACIÓN
+# ======================================================
 
-    if st.button(
-        "💾 Guardar cambios de programación",
-        type="primary"
-    ):
+if st.button(
+    "💾 Guardar cambios de programación",
+    type="primary"
+):
 
-        # --------------------------------------------------
-        # COPIAR VALORES EDITADOS
-        # --------------------------------------------------
-        
-        estado_programador = (
-            df_editado["Estado Programador"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
+    # --------------------------------------------------
+    # ÍNDICES ORIGINALES DE LOS REGISTROS MOSTRADOS
+    # --------------------------------------------------
+    #
+    # df_editado proviene de df_mostrar.
+    # df_mostrar conserva los índices originales
+    # de df_gestion.
+    #
+    # Por lo tanto, estos índices permiten actualizar
+    # exactamente los registros editados, aunque existan
+    # filtros activos.
+    # --------------------------------------------------
 
-        prioridad = (
-            df_editado["Prioridad"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
+    indices_editados = df_editado.index
 
 
-        # --------------------------------------------------
-        # GUARDAR PROGRAMAR HOY
-        # --------------------------------------------------
+    # --------------------------------------------------
+    # COPIAR VALORES EDITADOS
+    # --------------------------------------------------
 
-        
+    estado_programador = (
+        df_editado["Estado Programador"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
-        df_gestion["Prioridad"] = prioridad
-
-        # --------------------------------------------------
-        # CALCULAR PROGRAMAR HOY AUTOMÁTICAMENTE
-        #
-        # Programado Para = HOY  → SI
-        # Programado Para ≠ HOY  → NO
-        # Programado Para vacío   → NO
-        # --------------------------------------------------
-
-        hoy = pd.Timestamp.now().normalize()
-
-        programado_para = pd.to_datetime(
-            df_editado["Programado Para"],
-            errors="coerce"
-        ).dt.normalize()
-
-        df_gestion["Programado Para"] = programado_para
-
-        df_gestion["Programar Hoy"] = (
-            programado_para == hoy
-        ).map(
-            {
-                True: "SI",
-                False: "NO"
-            }
-        )
-
-        # --------------------------------------------------
-        # REGLA 1
-        #
-        # PROGRAMAR HOY = SI
-        #
-        # El ID queda PROGRAMADO.
-        # --------------------------------------------------
-
-        condicion_programar = (
-            df_gestion["Programar Hoy"] == "SI"
-        )
-
-        df_gestion.loc[
-            condicion_programar,
-            "Estado Registro"
-        ] = "Programado"
-
-        df_gestion.loc[
-            condicion_programar,
-            "Estado Programador"
-        ] = "Programado"
+    prioridad = (
+        df_editado["Prioridad"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
 
-        # --------------------------------------------------
-        # REGLA 2
-        #
-        # ESTADO DEFINIDO MANUALMENTE POR EL PROGRAMADOR
-        # --------------------------------------------------
+    # --------------------------------------------------
+    # GUARDAR PRIORIDAD
+    # --------------------------------------------------
 
-        condicion_en_ejecucion = (
-            estado_programador == "En ejecución"
-        )
-
-        df_gestion.loc[
-            condicion_en_ejecucion,
-            "Estado Registro"
-        ] = "En ejecución"
-
-        df_gestion.loc[
-            condicion_en_ejecucion,
-            "Estado Programador"
-        ] = "En ejecución"
+    df_gestion.loc[
+        indices_editados,
+        "Prioridad"
+    ] = prioridad.to_numpy()
 
 
-        # --------------------------------------------------
-        # REGLA 3
-        #
-        # FINALIZADO
-        #
-        # El programador decide que terminó.
-        # --------------------------------------------------
+    # --------------------------------------------------
+    # CALCULAR PROGRAMAR HOY AUTOMÁTICAMENTE
+    #
+    # Programado Para = HOY  → SI
+    # Programado Para ≠ HOY  → NO
+    # Programado Para vacío   → NO
+    # --------------------------------------------------
 
-        condicion_finalizado = (
-            estado_programador == "Finalizado"
-        )
+    hoy = pd.Timestamp.now().normalize()
 
-        df_gestion.loc[
-            condicion_finalizado,
-            "Estado Registro"
-        ] = "Finalizado"
-
-        df_gestion.loc[
-            condicion_finalizado,
-            "Estado Programador"
-        ] = "Finalizado"
-
-        df_gestion.loc[
-            condicion_finalizado,
-            "Programar Hoy"
-        ] = "NO"
+    programado_para = pd.to_datetime(
+        df_editado["Programado Para"],
+        errors="coerce"
+    ).dt.normalize()
 
 
-        # --------------------------------------------------
-        # REGLA 4
-        #
-        # CANCELADO
-        #
-        # El programador decide cancelar.
-        # --------------------------------------------------
-
-        condicion_cancelado = (
-            estado_programador == "Cancelado"
-        )
-
-        df_gestion.loc[
-            condicion_cancelado,
-            "Estado Registro"
-        ] = "Cancelado"
-
-        df_gestion.loc[
-            condicion_cancelado,
-            "Estado Programador"
-        ] = "Cancelado"
-
-        df_gestion.loc[
-            condicion_cancelado,
-            "Programar Hoy"
-        ] = "NO"
+    df_gestion.loc[
+        indices_editados,
+        "Programado Para"
+    ] = programado_para.to_numpy()
 
 
-        # --------------------------------------------------
-        # GUARDAR
-        # --------------------------------------------------
-
-        guardar_gestion(
-            df_gestion
-        )
-
-
-        st.success(
-            "🟢 Cambios de programación guardados correctamente."
-        )
+    programar_hoy = (
+        programado_para == hoy
+    ).map(
+        {
+            True: "SI",
+            False: "NO"
+        }
+    )
 
 
-        st.rerun()
+    df_gestion.loc[
+        indices_editados,
+        "Programar Hoy"
+    ] = programar_hoy.to_numpy()
+
+
+    # --------------------------------------------------
+    # REGLA 1
+    #
+    # PROGRAMAR HOY = SI
+    #
+    # El ID queda PROGRAMADO.
+    # --------------------------------------------------
+
+    condicion_programar = (
+        programar_hoy == "SI"
+    )
+
+
+    indices_programar = indices_editados[
+        condicion_programar.to_numpy()
+    ]
+
+
+    df_gestion.loc[
+        indices_programar,
+        "Estado Registro"
+    ] = "Programado"
+
+
+    df_gestion.loc[
+        indices_programar,
+        "Estado Programador"
+    ] = "Programado"
+
+
+    # --------------------------------------------------
+    # REGLA 2
+    #
+    # ESTADO DEFINIDO MANUALMENTE POR EL PROGRAMADOR
+    # --------------------------------------------------
+
+    condicion_en_ejecucion = (
+        estado_programador == "En ejecución"
+    )
+
+
+    indices_en_ejecucion = indices_editados[
+        condicion_en_ejecucion.to_numpy()
+    ]
+
+
+    df_gestion.loc[
+        indices_en_ejecucion,
+        "Estado Registro"
+    ] = "En ejecución"
+
+
+    df_gestion.loc[
+        indices_en_ejecucion,
+        "Estado Programador"
+    ] = "En ejecución"
+
+
+    # --------------------------------------------------
+    # REGLA 3
+    #
+    # FINALIZADO
+    # --------------------------------------------------
+
+    condicion_finalizado = (
+        estado_programador == "Finalizado"
+    )
+
+
+    indices_finalizado = indices_editados[
+        condicion_finalizado.to_numpy()
+    ]
+
+
+    df_gestion.loc[
+        indices_finalizado,
+        "Estado Registro"
+    ] = "Finalizado"
+
+
+    df_gestion.loc[
+        indices_finalizado,
+        "Estado Programador"
+    ] = "Finalizado"
+
+
+    df_gestion.loc[
+        indices_finalizado,
+        "Programar Hoy"
+    ] = "NO"
+
+
+    # --------------------------------------------------
+    # REGLA 4
+    #
+    # CANCELADO
+    # --------------------------------------------------
+
+    condicion_cancelado = (
+        estado_programador == "Cancelado"
+    )
+
+
+    indices_cancelado = indices_editados[
+        condicion_cancelado.to_numpy()
+    ]
+
+
+    df_gestion.loc[
+        indices_cancelado,
+        "Estado Registro"
+    ] = "Cancelado"
+
+
+    df_gestion.loc[
+        indices_cancelado,
+        "Estado Programador"
+    ] = "Cancelado"
+
+
+    df_gestion.loc[
+        indices_cancelado,
+        "Programar Hoy"
+    ] = "NO"
+
+    # --------------------------------------------------
+    # REGLA 5
+    #
+    # PENDIENTE CIERRE
+    # El usuario selecciona el estado y el sistema
+    # lo copia a Estado Registro.
+    # --------------------------------------------------
+
+    condicion_pendiente_cierre = (
+        (estado_programador == "Pendiente Cierre")
+        & (programar_hoy != "SI")
+    )
+
+    indices_pendiente_cierre = indices_editados[
+        condicion_pendiente_cierre.to_numpy()
+    ]
+
+    df_gestion.loc[
+        indices_pendiente_cierre,
+        "Estado Registro"
+    ] = "Pendiente Cierre"
+
+    df_gestion.loc[
+        indices_pendiente_cierre,
+        "Estado Programador"
+    ] = "Pendiente Cierre"
+
+
+    # --------------------------------------------------
+    # GUARDAR
+    # --------------------------------------------------
+
+    guardar_gestion(
+        df_gestion
+    )
+
+
+    st.success(
+        "🟢 Cambios de programación guardados correctamente."
+    )
+
+
+    st.rerun()
 
 # ==========================================================
 # BIBLIOTECA MRP
@@ -5872,4 +6154,48 @@ elif pagina == "📄 Órdenes de Servicio":
     st.info(
         "Módulo pendiente de construcción."
     )
+
+# ==========================================================
+# CALIFICACIÓN DEL PERSONAL
+# ==========================================================
+
+elif pagina == "📊 Calificación del Personal":
+
+    st.header(
+        "📊 Calificación del Personal"
+    )
+
+    st.info(
+        "Módulo pendiente de construcción."
+    )
+
+
+# ==========================================================
+# EFICACIA DE LAS ÓRDENES DE SERVICIO
+# ==========================================================
+
+elif pagina == "📈 Eficacia de las Órdenes de Servicio":
+
+    st.header(
+        "📈 Eficacia de las Órdenes de Servicio"
+    )
+
+    st.info(
+        "Módulo pendiente de construcción."
+    )
+
+
+# ==========================================================
+# EFECTIVIDAD DE LAS ÓRDENES DE SERVICIO
+# ==========================================================
+
+elif pagina == "🎯 Efectividad de las Órdenes de Servicio":
+
+    st.header(
+        "🎯 Efectividad de las Órdenes de Servicio"
+    )
+
+    st.info(
+        "Módulo pendiente de construcción."
+    )    
 

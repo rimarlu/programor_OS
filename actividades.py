@@ -4,6 +4,7 @@ import unicodedata
 
 import pandas as pd
 import streamlit as st
+import re
 
 from biblioteca_mrp import buscar_contextos_similares
 
@@ -439,57 +440,332 @@ PALABRAS_ACCION = {
 }
 
 
+# ============================================================
+# PRODUCTOS / ELEMENTOS PRINCIPALES
+# ============================================================
+
+PALABRAS_ELEMENTO = {
+    "mural": "Mural",
+    "murales": "Mural",
+
+    "aviso": "Aviso",
+    "avisos": "Aviso",
+
+    "valla": "Valla",
+    "vallas": "Valla",
+
+    "bastidor": "Bastidor",
+    "bastidores": "Bastidor",
+
+    "fototelon": "Fototelón",
+    "fototelón": "Fototelón",
+    "fototelones": "Fototelón",
+
+    "lona": "Lona",
+    "lonas": "Lona",
+
+    "pendon": "Pendón",
+    "pendón": "Pendón",
+    "pendones": "Pendón",
+
+    "cartel": "Cartel",
+    "carteles": "Cartel",
+
+    "fachada": "Fachada",
+    "fachadas": "Fachada",
+
+    "letrero": "Letrero",
+    "letreros": "Letrero",
+}
+
 # ==========================================================
-# DETECTAR PRODUCTOS
+# FAMILIAS DE COMPONENTES
 # ==========================================================
 
-PALABRAS_PRODUCTO = {
+PALABRAS_ESTRUCTURALES = {
+    "bastidor": "Bastidor",
+    "bastidores": "Bastidor",
 
-    "Vinilo": [
-        "vinilo",
-        "vinil",
-    ],
+    "valla": "Valla",
+    "vallas": "Valla",
 
-    "Fototelón": [
-        "fototelon",
-        "foto telon",
-    ],
+    "aviso": "Aviso",
+    "avisos": "Aviso",
 
-    "Lona": [
-        "lona",
-        "lona impresa",
-    ],
+    "señal": "Señal",
+    "senal": "Señal",
+    "señales": "Señal",
+    "senales": "Señal",
 
-    "Aviso": [
-        "aviso",
-        "avisos",
-    ],
+    "caja": "Caja",
+    "cajas": "Caja",
 
-    "Valla": [
-        "valla",
-        "vallas",
-    ],
+    "lamina": "Lámina",
+    "lámina": "Lámina",
+    "laminas": "Lámina",
+    "láminas": "Lámina",
 
-    "Bastidor": [
-        "bastidor",
-        "bastidores",
-        "marco bastidor",
-    ],
+    "pendon": "Pendón",
+    "pendón": "Pendón",
+    "pendones": "Pendón",
 
-    "Mural": [
-        "mural",
-        "murales",
-    ],
+    "pasacalle": "Pasacalle",
+    "pasacalles": "Pasacalle",
 
-    "Pendón": [
-        "pendon",
-        "pendones",
-    ],
+    "bandera": "Bandera",
+    "banderas": "Bandera",
 
-    "Tótem": [
-        "totem",
-        "totems",
-    ],
+    "pasavias": "Pasavías",
+    "pasavías": "Pasavías",
+
+    "barrera": "Barrera",
+    "barreras": "Barrera",
+
+    "troquel": "Troquel",
+    "troqueles": "Troquel",
+
+    "backing": "Backing",
+
+    "publiposte": "Publiposte",
+    "publipostes": "Publiposte",
+}
+
+
+PALABRAS_IMPRESION = {
+    "fototelon": "Fototelón",
+    "fototelón": "Fototelón",
+    "fototelones": "Fototelón",
+
+    "lona impresa": "Lona impresa",
+    "lonas impresas": "Lona impresa",
+
+    "vinilo impreso": "Vinilo impreso",
+    "vinilos impresos": "Vinilo impreso",
+
+    "fotovinilo": "Fotovinilo",
+    "fotovinilos": "Fotovinilo",
+}
+
+
+PALABRAS_SOPORTE_EXISTENTE = {
+    "muro": "Muro",
+    "muros": "Muro",
+
+    "pared": "Pared",
+    "paredes": "Pared",
+
+    "puerta": "Puerta",
+    "puertas": "Puerta",
+
+    "via": "Vía",
+    "vía": "Vía",
+    "vias": "Vía",
+    "vías": "Vía",
+
+    "vidriera": "Vidriera",
+    "vidrieras": "Vidriera",
+
+    "vehiculo": "Vehículo",
+    "vehículo": "Vehículo",
+    "vehiculos": "Vehículo",
+    "vehículos": "Vehículo",
+
+    "ascensor": "Ascensor",
+    "ascensores": "Ascensor",
+
+    "torniquete": "Torniquete",
+    "torniquetes": "Torniquete",
+
+    "mural": "Mural",
+    "murales": "Mural",
+}
+
+def detectar_componentes(descripcion):
+    texto = normalizar_texto(descripcion)
+
+    estructurales = []
+    estructurales_existentes = []
+    impresion = []
+    soportes = []
+
+    # -----------------------------------------
+    # COMPONENTES ESTRUCTURALES
+    # -----------------------------------------
+
+    for palabra, componente in PALABRAS_ESTRUCTURALES.items():
+
+        palabra_normalizada = normalizar_texto(palabra)
+
+        patron = (
+            r"(?<!\w)"
+            + re.escape(palabra_normalizada)
+            + r"(?!\w)"
+        )
+
+        coincidencia = re.search(patron, texto)
+
+        if coincidencia:
+
+            if componente not in estructurales:
+                estructurales.append(componente)
+
+            # -----------------------------------------
+            # DETERMINAR SI EL COMPONENTE ES EXISTENTE
+            # -----------------------------------------
+
+            inicio = max(0, coincidencia.start() - 40)
+            fin = min(len(texto), coincidencia.end() + 40)
+
+            contexto = texto[inicio:fin]
+
+            palabras_existente = [
+                "existente",
+                "existentes",
+                "ya existe",
+                "ya existen",
+                "existia",
+                "existía",
+                "actual",
+                "actualmente",
+            ]
+
+            es_existente = any(
+                palabra_existente in contexto
+                for palabra_existente in palabras_existente
+            )
+
+            if es_existente:
+                if componente not in estructurales_existentes:
+                    estructurales_existentes.append(componente)
+
+    # -----------------------------------------
+    # COMPONENTES DE IMPRESIÓN
+    # -----------------------------------------
+
+    for palabra, componente in PALABRAS_IMPRESION.items():
+
+        palabra_normalizada = normalizar_texto(palabra)
+
+        patron = (
+            r"(?<!\w)"
+            + re.escape(palabra_normalizada)
+            + r"(?!\w)"
+        )
+
+        if re.search(patron, texto):
+
+            if componente not in impresion:
+                impresion.append(componente)
+
+    # -----------------------------------------
+    # SOPORTES / ELEMENTOS EXISTENTES
+    # -----------------------------------------
+
+    for palabra, soporte in PALABRAS_SOPORTE_EXISTENTE.items():
+
+        palabra_normalizada = normalizar_texto(palabra)
+
+        patron = (
+            r"(?<!\w)"
+            + re.escape(palabra_normalizada)
+            + r"(?!\w)"
+        )
+
+        if re.search(patron, texto):
+
+            if soporte not in soportes:
+                soportes.append(soporte)
+
+    return {
+        "estructurales": estructurales,
+        "estructurales_existentes": estructurales_existentes,
+        "impresion": impresion,
+        "soportes": soportes,
+    }
+
+    # ------------------------------------------------------
+    # COMPONENTES DE IMPRESIÓN
+    # ------------------------------------------------------
+
+    for palabra, componente in PALABRAS_IMPRESION.items():
+
+        palabra_normalizada = normalizar_texto(palabra)
+
+        patron = (
+            r"(?<!\w)"
+            + re.escape(palabra_normalizada)
+            + r"(?!\w)"
+        )
+
+        if re.search(patron, texto):
+
+            if componente not in impresion:
+                impresion.append(componente)
+
+    # ------------------------------------------------------
+    # SOPORTES EXISTENTES
+    # ------------------------------------------------------
+
+    for palabra, soporte in PALABRAS_SOPORTE_EXISTENTE.items():
+
+        palabra_normalizada = normalizar_texto(palabra)
+
+        patron = (
+            r"(?<!\w)"
+            + re.escape(palabra_normalizada)
+            + r"(?!\w)"
+        )
+
+        if re.search(patron, texto):
+
+            if soporte not in soportes:
+                soportes.append(soporte)
+
+    return {
+        "estructurales": estructurales,
+        "impresion": impresion,
+        "soportes": soportes,
+    }
+
+
+# ============================================================
+# MATERIALES / CARACTERÍSTICAS
+# ============================================================
+
+PALABRAS_MATERIAL = {
+    "vinilo": "Vinilo",
+    "vinilo adhesivo": "Vinilo adhesivo",
+
+    
+    "aluminio": "Aluminio",
+    "acero": "Acero",
+    "mdf": "MDF",
+    "acrilico": "Acrílico",
+    "acrílico": "Acrílico",
+
+    "laminado": "Laminado",
+    "laminado mate": "Laminado mate",
+    "laminado brillante": "Laminado brillante",
+}
+
+
+# ============================================================
+# CARACTERÍSTICAS TÉCNICAS
+# ============================================================
+
+PALABRAS_CARACTERISTICA = {
+    "1440 dpi": "1440 DPI",
+    "1440dpi": "1440 DPI",
+
+    "720 dpi": "720 DPI",
+    "720dpi": "720 DPI",
+
+    "refilado": "Refilado",
+    "impreso": "Impreso",
+    "impresa": "Impresa",
+
+    "en alturas": "En alturas",
+    "instalación en alturas": "Instalación en alturas",
 }
 
 
@@ -511,7 +787,20 @@ def detectar_acciones(
 
         for palabra in palabras:
 
-            if palabra in texto_normalizado:
+            palabra_normalizada = normalizar_texto(
+                palabra
+            )
+
+            # Buscar la palabra completa y no una parte
+            # de otra palabra.
+            patron = r"(?<!\w)" + re.escape(
+                palabra_normalizada
+            ) + r"(?!\w)"
+
+            if re.search(
+                patron,
+                texto_normalizado
+            ):
 
                 acciones_encontradas.append(
                     accion
@@ -574,30 +863,68 @@ def determinar_accion_principal(
 
 
 # ==========================================================
-# DETECTAR PRODUCTOS
+# DETECTAR PRODUCTOS / ELEMENTOS
 # ==========================================================
 
 def detectar_productos(
-    texto
+    descripcion
 ):
 
-    texto_normalizado = normalizar_texto(
-        texto
+    texto = normalizar_texto(
+        descripcion
     )
+
+    productos_encontrados = []
+
+    for palabra, producto in PALABRAS_ELEMENTO.items():
+
+        palabra_normalizada = normalizar_texto(
+            palabra
+        )
+
+        patron = (
+            r"(?<!\w)"
+            + re.escape(palabra_normalizada)
+            + r"(?!\w)"
+        )
+
+        coincidencia = re.search(
+            patron,
+            texto
+        )
+
+        if coincidencia:
+
+            posicion = coincidencia.start()
+
+            productos_encontrados.append(
+                (
+                    posicion,
+                    producto
+                )
+            )
+
+    # ------------------------------------------------------
+    # ORDENAR SEGÚN APARICIÓN EN LA DESCRIPCIÓN
+    # ------------------------------------------------------
+
+    productos_encontrados.sort(
+        key=lambda x: x[0]
+    )
+
+    # ------------------------------------------------------
+    # ELIMINAR DUPLICADOS
+    # ------------------------------------------------------
 
     productos = []
 
-    for producto, palabras in PALABRAS_PRODUCTO.items():
+    for _, producto in productos_encontrados:
 
-        for palabra in palabras:
+        if producto not in productos:
 
-            if palabra in texto_normalizado:
-
-                productos.append(
-                    producto
-                )
-
-                break
+            productos.append(
+                producto
+            )
 
     return productos
 
@@ -621,104 +948,52 @@ def determinar_producto_principal(
 # DETECTAR CARACTERÍSTICAS ESPECIALES
 # ==========================================================
 
-def detectar_caracteristicas(
-    texto
-):
-
-    texto_normalizado = normalizar_texto(
-        texto
-    )
+def detectar_caracteristicas(descripcion):
+    texto = normalizar_texto(descripcion)
 
     caracteristicas = []
 
-    # ------------------------------------------------------
-    # IMPRESIÓN
-    # ------------------------------------------------------
+    # ========================================================
+    # MATERIALES
+    # ========================================================
 
-    es_impreso = any(
-        palabra in texto_normalizado
-        for palabra in [
-            "impreso",
-            "impresa",
-            "impresion",
-            "1440 dpi",
-            "720 dpi",
-            "ppp",
-        ]
+    # Primero evaluamos las expresiones más largas/específicas.
+    materiales_ordenados = sorted(
+        PALABRAS_MATERIAL.items(),
+        key=lambda x: len(x[0]),
+        reverse=True
     )
 
-    if es_impreso:
+    texto_trabajo = texto
 
-        caracteristicas.append(
-            "Impreso"
-        )
+    for palabra, valor in materiales_ordenados:
 
-    # ------------------------------------------------------
-    # LAMINADO
-    # ------------------------------------------------------
+        if palabra in texto_trabajo:
 
-    if (
-        "laminado" in texto_normalizado
-        or "laminado mate" in texto_normalizado
-        or "laminar" in texto_normalizado
-    ):
+            if valor not in caracteristicas:
+                caracteristicas.append(valor)
 
-        caracteristicas.append(
-            "Laminado"
-        )
+            # Evita que después se detecte también
+            # el término contenido dentro de esta expresión.
+            texto_trabajo = texto_trabajo.replace(
+                palabra,
+                " "
+            )
 
-    # ------------------------------------------------------
-    # REFILADO
-    # ------------------------------------------------------
+    # ========================================================
+    # CARACTERÍSTICAS TÉCNICAS
+    # ========================================================
 
-    if (
-        "refilado" in texto_normalizado
-        or "refilar" in texto_normalizado
-    ):
+    caracteristicas_ordenadas = sorted(
+        PALABRAS_CARACTERISTICA.items(),
+        key=lambda x: len(x[0]),
+        reverse=True
+    )
 
-        caracteristicas.append(
-            "Refilado"
-        )
+    for palabra, valor in caracteristicas_ordenadas:
 
-    # ------------------------------------------------------
-    # ALTURAS
-    # ------------------------------------------------------
-
-    if (
-        "altura" in texto_normalizado
-        or "alturas" in texto_normalizado
-    ):
-
-        caracteristicas.append(
-            "Trabajo en alturas"
-        )
-
-    # ------------------------------------------------------
-    # INSTALACIÓN
-    # ------------------------------------------------------
-
-    if (
-        "instalacion" in texto_normalizado
-        or "instalar" in texto_normalizado
-    ):
-
-        caracteristicas.append(
-            "Instalación"
-        )
-
-    # ------------------------------------------------------
-    # DESINSTALACIÓN
-    # ------------------------------------------------------
-
-    if (
-        "desinstalacion" in texto_normalizado
-        or "desinstalar" in texto_normalizado
-        or "desmonte" in texto_normalizado
-    ):
-
-        caracteristicas.append(
-            "Desinstalación"
-        )
+        if palabra in texto and valor not in caracteristicas:
+            caracteristicas.append(valor)
 
     return caracteristicas
 
@@ -771,16 +1046,22 @@ def analizar_id(
     }
 
 
-# ==========================================================
-# ACTIVIDADES BASE POR ACCIÓN
-# ==========================================================
-
 def actividades_base_por_accion(
     accion,
-    producto
+    producto,
+    caracteristicas=None,
+    productos=None
 ):
 
     actividades = []
+
+    if caracteristicas is None:
+
+        caracteristicas = []
+
+    if productos is None:
+
+        productos = []    
 
     # ======================================================
     # DESINSTALACIÓN
@@ -901,21 +1182,123 @@ def actividades_base_por_accion(
 
     elif accion == "Venta":
 
-        actividades = [
-            (
-                f"Fabricar {producto.lower()}"
-                if producto != "No determinado"
-                else "Fabricar elemento"
-            ),
-            "Control de calidad",
-            "Empaque",
-        ]
+        actividades = []
+
+        if producto == "No determinado":
+
+            actividades = [
+                "Revisar producto requerido",
+                "Empacar producto",
+            ]
+
+        else:
+
+            # ==================================================
+            # COMPONENTES ESTRUCTURALES FABRICABLES
+            # ==================================================
+
+            if "Bastidor" in productos:
+
+                actividades.append(
+                    "Fabricar bastidor"
+                )
+
+            # ==================================================
+            # PRODUCTO / ELEMENTO IMPRESO
+            # ==================================================
+
+            productos_impresos = [
+                "Fototelón",
+                "Lona",
+                "Mural",
+                "Vinilo",
+            ]
+
+            producto_impreso = None
+
+            for elemento in productos:
+
+                if elemento in productos_impresos:
+
+                    producto_impreso = elemento
+
+                    break
+
+            es_impreso = (
+                producto_impreso is not None
+                and any(
+                    caracteristica in [
+                        "Impreso",
+                        "Impresa",
+                    ]
+                    for caracteristica in caracteristicas
+                )
+            )
+
+            # ==================================================
+            # IMPRESIÓN
+            # ==================================================
+
+            if es_impreso:
+
+                actividades.append(
+                    "Impresión"
+                )
+
+                actividades.append(
+                    "Acabados de impresión"
+                )
+
+            # ==================================================
+            # ENSAMBLE DEL PRODUCTO COMPUESTO
+            # ==================================================
+
+            if len(productos) > 1:
+
+                actividades.append(
+                    "Ensamblar producto"
+                )
+
+            # ==================================================
+            # INCORPORACIÓN DEL ELEMENTO IMPRESO
+            # ==================================================
+
+            if es_impreso:
+
+                if producto_impreso == "Fototelón":
+
+                    actividades.append(
+                        "Templar fototelón"
+                    )
+
+                elif producto_impreso == "Lona":
+
+                    actividades.append(
+                        "Templar lona"
+                    )
+
+                elif producto_impreso in [
+                    "Mural",
+                    "Vinilo",
+                ]:
+
+                    actividades.append(
+                        f"Decorar {producto_impreso.lower()}"
+                    )
+
+            # ==================================================
+            # EMPAQUE
+            # ==================================================
+
+            actividades.append(
+                "Empacar producto"
+            )
 
     return actividades
 
 
 # ==========================================================
-# REGLAS ESPECIALES PARA PRODUCTOS IMPRESOS
+# APLICAR REGLAS DE IMPRESIÓN
 # ==========================================================
 
 def aplicar_reglas_impresion(
@@ -938,7 +1321,13 @@ def aplicar_reglas_impresion(
 
     es_producto_impreso = (
         producto in productos_impresos
-        and "Impreso" in caracteristicas
+        and any(
+            caracteristica in [
+                "Impreso",
+                "Impresa",
+            ]
+            for caracteristica in caracteristicas
+        )
     )
 
     # ------------------------------------------------------
@@ -960,11 +1349,11 @@ def aplicar_reglas_impresion(
                 "Impresión"
             )
 
-        if "Acabados" not in actividades:
+        
 
-            actividades.append(
-                "Acabados"
-            )
+    # ------------------------------------------------------
+    # SIEMPRE DEVOLVER LA LISTA
+    # ------------------------------------------------------
 
     return actividades
 
@@ -1480,7 +1869,9 @@ def proponer_actividades(
     actividades = (
         actividades_base_por_accion(
             accion,
-            producto
+            producto,
+            caracteristicas,
+            analisis["productos"]
         )
     )
 
@@ -2262,3 +2653,87 @@ def mostrar_actividades_id(
             st.warning(
                 "Debe escribir una actividad."
             )
+
+# ============================================================
+# PRUEBA TEMPORAL
+# ============================================================
+
+if __name__ == "__main__":
+
+    pruebas = [
+        "Venta de MURALES con Vinilo adhesivo Avery 3822 laminado mate",
+        "Venta de Mural con Bastidor en aluminio",
+        "Venta de Bastidor con Fototelon en aluminio",
+        "Desinstalacion de Valla con Vinilo adhesivo",
+        "Instalacion de Bastidor con Fototelon",
+        "Venta de Lona impresa con Bastidor en aluminio",
+    ]
+
+    for descripcion in pruebas:
+
+        print("\n----------------------------------------")
+        print("DESCRIPCION:")
+        print(descripcion)
+
+        acciones = detectar_acciones(descripcion)
+
+        print("ACCIONES:")
+        print(acciones)
+
+        print("ACCION PRINCIPAL:")
+        print(determinar_accion_principal(descripcion, acciones))
+
+        print("PRODUCTOS:")
+        print(detectar_productos(descripcion))
+
+        print("CARACTERISTICAS:")
+        print(detectar_caracteristicas(descripcion))
+
+        print("ACTIVIDADES PROPUESTAS:")
+
+        actividades, analisis = proponer_actividades(
+            {
+                "ID": "PRUEBA",
+                "Referencia del pedido": "PRUEBA",
+                "Descripción": descripcion,
+            }
+        )
+
+        for actividad in actividades:
+            print(
+                f"  - {actividad}"
+            )
+
+print("\n========================================")
+print("PRUEBA DE COMPONENTES")
+print("========================================")
+
+pruebas_componentes = [
+    "Venta de Bastidor con Fototelon en aluminio",
+    "Venta de Lona impresa con Bastidor en aluminio",
+    "Venta de Vinilo impreso para muro",
+    "Venta de Valla existente con Vinilo impreso",
+    "Instalacion de Aviso en fachada",
+    "Venta de Fotovinilo para puerta",
+]
+
+for descripcion_prueba in pruebas_componentes:
+
+    componentes = detectar_componentes(
+        descripcion_prueba
+    )
+
+    print("\nDESCRIPCION:")
+    print(descripcion_prueba)
+
+    print("ESTRUCTURALES:")
+    print(componentes["estructurales"])
+
+    print("ESTRUCTURALES EXISTENTES:")
+    print(componentes["estructurales_existentes"])
+
+    print("IMPRESION:")
+    print(componentes["impresion"])
+
+    print("SOPORTES:")
+    print(componentes["soportes"])            

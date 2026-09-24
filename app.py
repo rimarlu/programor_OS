@@ -580,8 +580,8 @@ def normalizar_respuesta_odoo(registros):
         "id",
         "name",
         "product_uom_qty",
-        #"date_order",
-        #"commitment_date",
+        "date_order",
+        "commitment_date",
         "price_subtotal",
         "id_state"
     ]
@@ -641,6 +641,74 @@ def normalizar_respuesta_odoo(registros):
     ].apply(obtener_nombre_relacion_odoo)
 
     return df[COLUMNAS_ODOO].copy()
+
+
+def normalizar_respuesta_mrp(registros):
+
+    columnas_mrp = [
+        "Operación",
+        "Lista de materiales",
+        "Centro de trabajo",
+        "Cálculo de duración",
+        "Duración",
+        "Instrucciones",
+    ]
+
+    if not isinstance(registros, list):
+        raise ValueError(
+            "La respuesta MRP de Odoo no contiene una lista."
+        )
+
+    if not registros:
+        return pd.DataFrame(columns=columnas_mrp)
+
+    df_api = pd.DataFrame(registros)
+
+    campos_requeridos = [
+        "name",
+        "bom_id",
+        "workcenter_id",
+        "time_mode",
+        "time_cycle",
+        "quality_point_count",
+    ]
+
+    faltantes = [
+        campo
+        for campo in campos_requeridos
+        if campo not in df_api.columns
+    ]
+
+    if faltantes:
+        raise ValueError(
+            "Odoo no devolvió los campos MRP requeridos: "
+            + ", ".join(faltantes)
+        )
+
+    df = pd.DataFrame()
+
+    df["Operación"] = df_api["name"].fillna("")
+
+    df["Lista de materiales"] = df_api[
+        "bom_id"
+    ].apply(obtener_nombre_relacion_odoo)
+
+    df["Centro de trabajo"] = df_api[
+        "workcenter_id"
+    ].apply(obtener_nombre_relacion_odoo)
+
+    df["Cálculo de duración"] = df_api[
+        "time_mode"
+    ].fillna("")
+
+    df["Duración"] = pd.to_numeric(
+        df_api["time_cycle"],
+        errors="coerce"
+    )
+
+    df["Instrucciones"] = df_api["quality_point_count"].fillna("")
+
+    return df[columnas_mrp].copy()
 
 
 def cargar_gestion():
@@ -2810,144 +2878,99 @@ elif pagina == "📚 Biblioteca MRP":
     )
 
     st.write(
-        "Seleccione el archivo Excel exportado desde "
-        "Odoo: Utilización del centro de producción "
-        "(mrp.routing.workcenter)."
+        "Consulte directamente en Odoo las operaciones "
+        "del modelo mrp.routing.workcenter."
     )
 
-    archivo_mrp = st.file_uploader(
-        "Seleccionar archivo Excel de Odoo MRP",
-        type=["xlsx", "xls"],
-        key="importar_biblioteca_mrp"
-    )
-
-    if archivo_mrp is not None:
+    if st.button(
+        "🔄 Consultar operaciones MRP",
+        type="primary",
+        key="consultar_api_biblioteca_mrp"
+    ):
 
         try:
 
-            # --------------------------------------------------
-            # LEER LIBRO
-            # --------------------------------------------------
+            with st.spinner(
+                "Consultando operaciones MRP en Odoo..."
+            ):
 
-            libro_excel = pd.ExcelFile(
-                archivo_mrp
-            )
+                cliente_odoo = OdooAPI()
+                registros_mrp = cliente_odoo.operaciones_modelo()
+                df_mrp = normalizar_respuesta_mrp(
+                    registros_mrp
+                )
 
-            nombre_hoja = (
-                libro_excel.sheet_names[0]
-            )
-
-            df_mrp = pd.read_excel(
-                archivo_mrp,
-                sheet_name=nombre_hoja
-            )
-
-            # --------------------------------------------------
-            # LIMPIAR NOMBRES DE CAMPOS
-            # --------------------------------------------------
-
-            df_mrp.columns = [
-                str(columna).strip()
-                for columna in df_mrp.columns
-            ]
+            st.session_state[
+                "vista_previa_biblioteca_mrp"
+            ] = df_mrp
 
             st.success(
-                f"Archivo leído correctamente. "
-                f"Hoja: {nombre_hoja}"
+                f"🟢 Consulta completada: "
+                f"{len(df_mrp)} operaciones encontradas."
             )
-
-            st.write(
-                f"Registros encontrados: "
-                f"**{len(df_mrp)}**"
-            )
-
-            # --------------------------------------------------
-            # CAMPOS OBLIGATORIOS
-            # --------------------------------------------------
-
-            campos_obligatorios = [
-                "Operación",
-                "Lista de materiales",
-                "Centro de trabajo",
-                "Cálculo de duración",
-                "Duración",
-                "Instrucciones",
-            ]
-
-            faltantes = [
-                campo
-                for campo in campos_obligatorios
-                if campo not in df_mrp.columns
-            ]
-
-            if faltantes:
-
-                st.error(
-                    "❌ Faltan campos obligatorios."
-                )
-
-                st.write(
-                    "Campos faltantes:"
-                )
-
-                for campo in faltantes:
-
-                    st.write(
-                        f"- {campo}"
-                    )
-
-            else:
-
-                st.success(
-                    "✅ Todos los campos requeridos "
-                    "fueron encontrados."
-                )
-
-                st.dataframe(
-                    df_mrp.head(100),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # --------------------------------------------------
-                # BOTÓN ACTUALIZAR
-                # --------------------------------------------------
-
-                if st.button(
-                    "🔄 Actualizar Biblioteca MRP",
-                    type="primary",
-                    key="actualizar_biblioteca_mrp"
-                ):
-
-                    df_guardar = df_mrp[
-                        campos_obligatorios
-                    ].copy()
-
-                    df_guardar.to_pickle(
-                        ARCHIVO_BIBLIOTECA_MRP
-                    )
-
-                    st.success(
-                        "🟢 Biblioteca MRP actualizada "
-                        "correctamente."
-                    )
-
-                    st.info(
-                        "El histórico de decisiones del "
-                        "Programador no fue modificado."
-                    )
-
-                    st.rerun()
 
         except Exception as error:
 
-            st.error(
-                "❌ Error al leer el archivo MRP."
+            st.session_state.pop(
+                "vista_previa_biblioteca_mrp",
+                None
             )
 
-            st.exception(
-                error
+            st.error(
+                f"❌ No fue posible consultar Odoo MRP: {error}"
             )
+
+    df_mrp_previa = st.session_state.get(
+        "vista_previa_biblioteca_mrp"
+    )
+
+    if df_mrp_previa is not None:
+
+        st.subheader(
+            "Vista previa de operaciones MRP"
+        )
+
+        st.write(
+            f"Registros encontrados: **{len(df_mrp_previa)}**"
+        )
+
+        st.dataframe(
+            df_mrp_previa.head(100),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        if df_mrp_previa.empty:
+
+            st.info(
+                "La consulta no devolvió operaciones MRP."
+            )
+
+        elif st.button(
+            "🔄 Actualizar Biblioteca MRP",
+            type="primary",
+            key="actualizar_biblioteca_mrp"
+        ):
+
+            df_mrp_previa.to_pickle(
+                ARCHIVO_BIBLIOTECA_MRP
+            )
+
+            st.session_state.pop(
+                "vista_previa_biblioteca_mrp",
+                None
+            )
+
+            st.success(
+                "🟢 Biblioteca MRP actualizada correctamente."
+            )
+
+            st.info(
+                "El histórico de decisiones del Programador "
+                "no fue modificado."
+            )
+
+            st.rerun()
 
     # ======================================================
     # PRUEBA DE BÚSQUEDA DE CONOCIMIENTO
